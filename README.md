@@ -1,4 +1,6 @@
 JLChess
 =======
 
-Chess AI
+Writing a Chess AI in Python.
+
+
