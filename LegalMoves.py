@@ -1,6 +1,9 @@
 from Board import Board
 from collections import defaultdict
 from itertools import chain
+import pdb
+
+opposition = lambda(side): 'BLACK' if side == 'WHITE' else 'WHITE'
 
 def boundCheckPos((row,col)):
     """
@@ -9,15 +12,16 @@ def boundCheckPos((row,col)):
     r = range(8)
     return row in r and col in r
 
-def pawnMoveGenerator(board,piece,(row,col)):
+def pawnMoveGenerator(board,(row,col)):
     """
         Yield possible pawn moves
         En passant not implemented
         Promotion not implemented
     """
     
-    side = piece['player']
-    oppo = 'BLACK' if side == 'WHITE' else 'WHITE'
+    #side = piece['player']
+    side = board.toplay
+    oppo = opposition(side)
     dir = -1 if side == 'WHITE' else 1
     
     starting_rank = {}
@@ -27,38 +31,41 @@ def pawnMoveGenerator(board,piece,(row,col)):
     #If we are in the starting rank we can move two spaces
     newPos = (row+2*dir,col)
     if row == starting_rank[side]:
-        if board.isEmptyAt(newPos) and board.isEmptyAt((row+dir,col)):
-            yield newPos
+        if board.siteOwner(newPos) == 'EMPTY' and board.siteOwner((row+dir,col))  == 'EMPTY':
+            yield newPos,"MOVE"
 
     #Move a single space, which we can always do
     newPos = (row+dir,col)
-    if board.isEmptyAt(newPos):
-        yield newPos
+    if board.siteOwner(newPos) == 'EMPTY':
+        yield newPos,"MOVE"
 
     #Taking a piece diagonally    
     for lr in [-1,1]:
         newPos = (row+dir,col+lr)
         if boundCheckPos(newPos):
-            if board.siteBelongsTo(newPos,oppo):
-                yield newPos
+            if board.siteOwner(newPos) == oppo:
+                yield newPos,"CAPTURE"
 
-def knightMoveGenerator(board,piece,(row,col)):
-    side = piece['player']
+def knightMoveGenerator(board,(row,col)):
+    side = board.toplay
+    oppo = opposition(side)
     
     def isPosValid(newPos):
         if boundCheckPos(newPos):
-            if board.siteDoesNotBelongTo(newPos,side):
+            if not board.siteOwner(newPos) == side:
                 return True
                 
     for x in [-2,2]:
         for y in [-1,1]:
             newPos = row+x,col+y
             if isPosValid(newPos):
-                yield newPos
+                movetype = "CAPTURE" if board.siteOwner(newPos) == oppo else "MOVE"
+                yield newPos,movetype
 
             newPos = row+y,col+x
             if isPosValid(newPos):
-                yield newPos
+                movetype = "CAPTURE" if board.siteOwner(newPos) == oppo else "MOVE"
+                yield newPos,movetype
 
 king_vecs = [ [( 0, 1)],
               [( 0,-1)],
@@ -80,33 +87,29 @@ bishop_vecs = [[( i, i) for i in range(1,8)],
                [(-i,-i) for i in range(1,8)]]
 
 def sliderMoveFactory(vecs):
-    
-    def sliderMoveGenerator(board,piece,(row,col)):
-        side = piece['player']
-        oppo = 'BLACK' if side == 'WHITE' else 'WHITE'
+    def sliderMoveGenerator(board,(row,col)):
+        side = board.toplay
+        oppo = opposition(side)
         
         for vec in vecs:
             for (x,y) in vec:
                 newPos = row+x,col+y
                 if boundCheckPos(newPos):
-                    ownsite   = board.siteBelongsTo(newPos,side)
-                    theirsite = board.siteBelongsTo(newPos,oppo)
-                    empty     = board.isEmptyAt(newPos) 
-    
-                    if ownsite:
+                    siteowner = board.siteOwner(newPos)
+                    if siteowner == side:
                         break
     
-                    if empty:
-                        yield newPos
+                    if siteowner == "EMPTY":
+                        yield newPos,"MOVE"
         
-                    if theirsite:
-                        yield newPos
+                    if siteowner == oppo:
+                        yield newPos,"CAPTURE"
                         break
 
     return sliderMoveGenerator
     
-def notImplementedMoveGenerator(board,piece,(row,col)):
-    print "NOT IMPLEMENTED"
+    
+def notImplementedMoveGenerator(board,(row,col)):
     return
     yield
     
@@ -120,45 +123,63 @@ class MoveGenerator:
         self.generators['BISHOP'] = sliderMoveFactory(bishop_vecs)
         self.generators['QUEEN']  = sliderMoveFactory(bishop_vecs+rook_vecs)
         
-    def generateMoves(self,board,colour):
-        for piece,pos in board.piecesGenerator(colour):
+    def generateMoves(self,board):
+        for piece,pos in board.piecesGenerator(board.toplay):
             p =  piece['piece']
-            for move in self.generators[p](board,piece,pos):
-                yield pos,move
+            for move,movetype in self.generators[p](board,pos):
+                yield pos,move,movetype
+
+class ThreatGenerator:
+    def __init__(self):
+        self.generators = defaultdict(lambda: notImplementedMoveGenerator)
+        self.movegenerators = [sliderMoveFactory(bishop_vecs), sliderMoveFactory(rook_vecs)]
+        self.validtargets   = [('QUEEN','BISHOP'),('QUEEN','ROOK')]
+        
+    def findThreats(self,board,pos):
+
+        movegenerator = self.movegenerators[0]
+        validtargets = self.validtargets[0]
+
+        blocks_list  = []
+        blocks = []
+        
+        for move,movetype in movegenerator(board,pos):
+            if movetype == "MOVE":
+                blocks.append(move)
+            if movetype == "CAPTURE":
+                if board.pieceAt(move)['piece'] in validtargets:
+                    blocks.append(move)
+                    blocks_list.append(blocks)
+                    blocks = []
+                else:
+                    blocks = []
+
+        return blocks_list
+
+
+def isInCheck(board):
+    for piece,pos in board.piecesGenerator(board.toplay):
+        if piece['piece'] == 'KING':
+            kingpos = pos
+    return tg.findThreats(board,kingpos)
 
 mg = MoveGenerator()
+tg = ThreatGenerator()
 
-def getBoards(board,depth,side):
-    oppo = 'BLACK' if side == 'WHITE' else 'WHITE'
-    boards = [board.applyMove(from_pos,to_pos) for from_pos,to_pos in mg.generateMoves(board,side)]
-    
+def getBoards(board,depth):
+    boards,movetypes = zip( *[( board.applyMove(from_pos,to_pos),movetype) for from_pos,to_pos,movetype in mg.generateMoves(board)] )
+#    boards = [ board.applyMove(from_pos,to_pos) for from_pos,to_pos in mg.generateMoves(board)]
+    #print type(movetypes),len(movetypes)
     if depth == 1:
-        return boards
+        return boards,movetypes
     else:
-        nextlevel = [getBoards(board,depth-1,oppo) for board in boards]
-        return list(chain(*nextlevel))
+        
+        #This is quite complicated at this depth
+        nextboards,nextmoves = zip( *[getBoards(board,depth-1) for board in boards] ) 
+        nextboards = list(chain(*nextboards))
+        nextmoves  = list(chain(*nextmoves))
+        return nextboards,nextmoves
+        #nextlevel = [getBoards(board,depth-1) for board in boards]
+        #pdb.set_trace()
+        #return list(chain(*nextlevel))
 
-def hasKing(board,side):
-    for row in range(8):
-        for col in range(8):
-            if board.board[row][col] == side + '_KING':
-                return True
-    return False
-
-def isSideInCheck(board,side):
-    """
-        side:  side to check if in check.  WHITE means BLACK is the attacking side
-    """
-    oppo = 'BLACK' if side == 'WHITE' else 'WHITE'
-    boards = getBoards(board,1,oppo)
-    for board in boards:
-        if not hasKing(board,side):
-            return True
-    return False
-    
-if __name__ == "__main__":
-    b1 = Board()
-    b1.setup()
-    print b1
-    nextboards = getBoards(b1,3,'WHITE')   #Want 8,902
-    print len(nextboards), "Positions at depth 3"

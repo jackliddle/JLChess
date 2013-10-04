@@ -35,7 +35,7 @@ Position3 = []
 Position3.append( PerftResults(       14,       1,     0,0,     0,       2,   0))
 Position3.append( PerftResults(      191,      14,     0,0,     0,      10,   0))
 Position3.append( PerftResults(     2812,     209,     2,0,     0,     267,   0))
-Position3.append( PerftResult  43238,    3348,   123,0,     0,    1680,  17))
+Position3.append( PerftResults(  43238,    3348,   123,0,     0,    1680,  17))
 Position3.append( PerftResults(   674624,   52051,  1165,0,     0,   52950,   0))
 Position3.append( PerftResults( 11030083,  940350, 33325,0,  7552,  452473,2733))
 Position3.append( PerftResults(178633661,14519036,294874,0,140024,12797406,  87))

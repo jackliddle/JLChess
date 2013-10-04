@@ -1,3 +1,3 @@
 #!/bin/bash
 
-rm *pyc *dat *bin
+rm -f *pyc *dat *bin cutcode
